@@ -1,0 +1,28 @@
+TCP反向代理
+
+重点：nginx从1.9.0版本开始，增加ngx_stream_core_module 支持四层负载均衡;
+默认编译的时候该模块并未编译进去，需要编译的时候添加--with-stream，使其支持stream代理
+官方参考链接：http://nginx.org/en/docs/stream/ngx_stream_core_module.html
+
+user  nginx;
+worker_processes  4;
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
+
+events {
+    use epoll;
+    worker_connections  1024;
+    }
+stream {
+        upstream gameport {
+        server   IP_address:port weight=5 max_fails=3 fail_timeout=30s;
+        server   IP_address:port   weight=5 max_fails=3 fail_timeout=30s;
+        }
+	 server {
+            listen port;
+            proxy_pass gameport;
+            proxy_connect_timeout 10s;
+            proxy_timeout 24h;
+              }
+
+	}
