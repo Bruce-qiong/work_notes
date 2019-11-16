@@ -1,0 +1,15 @@
+windows 2008r2
+
+自动获取服务器TCP端口
+配置文件
+UserParameter=tcpport.listen,C:\zabbix_agents4.25\auto-tcpport.bat
+
+.bat
+
+@echo off
+echo {
+echo         "data":[
+for /F "tokens=2 delims= " %%i IN ('netstat -anp tcp^|find /i "LISTENING"') DO for /F "tokens=2 delims=:" %%j IN ("%%i") DO  echo                  {"{#TCP_PORT}":"%%j"},
+echo                 {"{#TCP_PORT}":"8766"}
+echo         ]
+echo }

@@ -1,0 +1,53 @@
+数据库监控<mysql 实例>
+
+1、性能指标
+QPS(每秒处理的请求数量)
+
+show global status like 'Queries';
++---------------+---------+
+| Variable_name | Value   |
++---------------+---------+
+| Queries       | 8672790 |
++---------------+---------+
+
+2、增删改查每分钟次数统计
+shell 脚本统计
+
+show global status where Variable_name in('com_select','com_insert','com_delete','com_update');
+sleep(60)
+show global status where Variable_name in('com_select','com_insert','com_delete','com_update');
+得出结果 第一次减去第二次 /60
+
+3、查询数据库并发数
+show global status like 'Threads_running';
+
+4、查询数据库连接数
+show global status like 'Threads_connected';
+
+5、查询缓存命中率()
+show global status like 'qcache%';
+缓存命中率计算:查询缓存命中率 = (Qcache_hits - Qcache_inserts) / Qcache_hits * 100%
+Qcache_hits  查询命中缓存时值会增大
+Qcache_inserts  新增查询时就会增大
+
+6、查看表锁数
+show global status like 'table_locks%';
++-----------------------+---------+
+| Variable_name         | Value   |
++-----------------------+---------+
+| Table_locks_immediate | 2646614 |
+| Table_locks_waited    | 0       |
++-----------------------+---------+
+Table_locks_immediate 表示立即释放表锁数
+Table_locks_waited    表示需要等待的表锁数
+
+7、计算表扫描率
+（1）查询表扫描情况
+show global status like 'handler_read%';
+用Handler_read_rnd_next 值除以com_select
+show global status like 'com_select';
+
+8、慢查询
+查看配置  show variables like '%slow%';
+查看慢sql show global status like '%slow%';
+
