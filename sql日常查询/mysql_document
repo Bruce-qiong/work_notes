@@ -51,3 +51,10 @@ show global status like 'com_select';
 查看配置  show variables like '%slow%';
 查看慢sql show global status like '%slow%';
 
+9、查询阻塞
+select b.trx_mysql_thread_id AS '被阻塞线程',
+b.trx_query AS '被阻塞sql',
+c.trx_mysql_thread_id AS '阻塞线程',
+c.trx_query AS '阻塞SQL',
+(UNIX_TIMESTAMP()-UNIX_TIMESTAMP(c.trx_started)) AS '阻塞时间' FROM information_schema.innodb_lock_waits a JOIN information_schema.innodb_trx b ON a.requesting_trx_id=b.trx_id JOIN information_schema.innodb_trx c ON a.blocking_trx_id=c.trx_id where (UNIX_TIMESTAMP()-UNIX_TIMESTAMP(c.trx_started)) >30;
+
