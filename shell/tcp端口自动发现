@@ -1,5 +1,6 @@
 1、TCP端口自动发现
 
+```
 zabbix_agent配置文件
 vim /etc/zabbix/zabbix_agentd.conf
 UserParameter=tcpport_listen,/usr/lib/zabbix/alertscripts/tcpport_listen.sh "$1"
@@ -20,7 +21,7 @@ for ((i=0;i<$length;i++))
   done
 printf  "\n\t]\n"
 printf "}\n"
-
+```
 
 
 zabbix_get -s IP-address -k tcpport_listen
