@@ -1,0 +1,35 @@
+长连接配置--开启长连接模式
+	     	server {	
+	    error_log       /var/log/nginx/device9535_error.log;
+        access_log      /var/log/nginx/device9535_access.log proxy;	
+            listen 9535 so_keepalive=on;   #开启长连接
+            proxy_pass game9535;
+            proxy_connect_timeout 600s;
+              }
+	
+		server {
+	    error_log       /var/log/nginx/device8600_error.log;
+       	access_log      /var/log/nginx/device8600_access.log proxy;
+	    listen 8600 so_keepalive=on;
+            #listen 8600;
+            proxy_pass game8600;
+            proxy_connect_timeout 600s;
+              }
+
+nginx nginx proxy_pass后的url加不加/的区别
+
+nginx配置proxy_pass，需要注意转发的路径配置
+
+nginx配置proxy_pass，需要注意转发的路径配置
+
+第一种：proxy_pass后缀不加斜杠
+
+location /hotupdate32/ {
+            proxy_pass http://ip:9443;  //将某目录作为根路径
+     }
+第二种：proxy_pass后缀加斜杠
+
+location /hotupdate32/ {
+            proxy_pass http://ip:9443/;  //直接访问server的根资源
+     } 
+	 
