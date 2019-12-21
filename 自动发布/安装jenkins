@@ -1,0 +1,22 @@
+安装jdk
+
+yum install -y java-1.8.0
+
+安装jenkins
+
+cd /etc/yum.repos.d/
+wget http://pkg.jenkins.io/redhat/jenkins.repo
+rpm --import http://pkg.jenkins.io/redhat/jenkins.io.key
+yum install -y jenkins
+systemctl enable  jenkins
+systemctl start jenkins
+
+vim /etc/sysconfig/jenkins
+
+访问
+http://120.24.82.215:8081
+
+cat /var/lib/jenkins/secrets/initialAdminPassword
+
+
+

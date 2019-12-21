@@ -1,0 +1,37 @@
+-- 查询索引的使用的情况
+select * from sys.dm_db_index_usage_stats
+
+-- 查询未使用过的索引
+select object_name(object_id), i.name
+from sys.indexes i
+where i.index_id NOT IN (select s.index_id
+from sys.dm_db_index_usage_stats s
+where s.object_id=i.object_id and
+i.index_id=s.index_id and
+database_id = 11 )  -- 数据库id查询方式
+order by object_name(object_id) asc
+
+
+--查询数据库ID
+select DB_ID ('RYAccountsDB')
+
+
+-- 查询数据库中没有使用过到索引
+USE RYPlatformDB; --指定数据库
+GO
+DECLARE @dbid INT=DB_ID('WideWorldImporters');
+WITH cte AS(
+SELECT
+[object_id],index_id
+FROM sys.indexes
+EXCEPT
+SELECT
+[object_id],index_id
+FROM sys.dm_db_index_usage_stats
+WHERE database_id=@dbid)
+SELECT
+o.name tableName,i.name indexName
+FROM sys.indexes i
+INNER JOIN cte ON cte.index_id=i.index_id AND cte.[object_id]=i.[object_id]
+INNER JOIN sys.objects o ON i.[object_id]=o.[object_id]
+WHERE o.[type] IN ('U','V') AND i.[type]>0;
