@@ -1,0 +1,31 @@
+#get请求
+#用双引号把url引起来：
+curl "http://test.echo.com/master?mod=1&act=2"
+
+# POST请求
+curl http://xxxx.com:9443/api/heckOpen -X POST -H "Content-Type:application/json" -d '
+	{
+	"appVersion":"1.0.7",
+	"timestamp":"1576931931"
+	}'
+
+#一维数组
+ curl -d "name=echo&mod=1&act=1" "http://test.echo.com/test.php"
+ 
+#多维维数组
+ 
+ curl -d "user[name]=echo&mod=1&act=1" "http://test.echo.com/test.php"
+ 
+#爬取网页，获取本机外网ip
+ 
+ curl -m 30 --retry 3 https://proxy.mimvp.com/ip.php
+ 
+#限制curl下载速度
+curl URL --limit-rate 50k 
+
+#post请求，参数是RequestBody形式接收时
+curl -H “Content-Type:application/json” -X POST --data ‘{“aaa”:“bbb”}’ http://127.0.0.1:8089/test
+
+post请求，参数是RequestParam形式接收时
+
+curl -H “Content-Type:application/x-www-form-urlencoded” -X POST --data “startTime=2019022815&endTime=2019022816” http://localhost:8081
