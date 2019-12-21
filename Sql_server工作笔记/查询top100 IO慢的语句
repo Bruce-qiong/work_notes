@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 select top 100   
 
 (total_logical_reads/execution_count) as avg_logical_reads,  --平均逻辑读取时间
@@ -31,4 +32,39 @@ order by
 
   
 -- statement_start_offest 和statement_end_offset的值需要除以2来补偿SQL Server使用Unicode来存储这种数据的
+=======
+select top 100   
+
+(total_logical_reads/execution_count) as avg_logical_reads,  --平均逻辑读取时间
+
+(total_logical_writes/execution_count) as avg_logical_writes,  --平均逻辑写入时间
+
+(total_physical_reads/execution_count) as avg_phys_reads,  --平均物理读取时间
+
+Execution_count,  --执行次数  
+
+statement_start_offset as stmt_start_offset, statement_end_offset as stmt_end_offset,  --
+
+substring(sql_text.text, (statement_start_offset/2),   
+
+case   
+
+when (statement_end_offset -statement_start_offset)/2 <=0 then 64000  
+
+else (statement_end_offset -statement_start_offset)/2 end) as exec_statement,  sql_text.text,plan_text.*  
+
+from sys.dm_exec_query_stats    
+
+cross apply sys.dm_exec_sql_text(sql_handle) as sql_text  
+
+cross apply sys.dm_exec_query_plan(plan_handle) as plan_text  
+
+order by   
+
+(total_logical_reads + total_logical_writes) /Execution_count Desc
+
+
+  
+-- statement_start_offest 和statement_end_offset的值需要除以2来补偿SQL Server使用Unicode来存储这种数据的
+>>>>>>> 03344ce6e91dd37b680f80469bac6a5a2eaf794e
 -- 一个需要输入64000的值，来确认语句覆盖了所有的情况。通过这种方法，长时间运行或资源消费语句可以被过滤出大型的存储过程或批处理

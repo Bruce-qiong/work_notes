@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 select DB_NAME(database_id),
  
@@ -24,3 +25,31 @@ from sys.dm_io_virtual_file_stats(null,  --数据库id
                                  ) 
 order by io_stall desc
 
+=======
+
+select DB_NAME(database_id),
+ 
+       file_name(file_id),
+       
+       -- 该文件在磁盘上占用的字节数。
+       --对于稀疏文件，此数字是数据库快照在磁盘上所占用的实际字节数 
+       size_on_disk_bytes,
+       
+       sample_ms,         --自从计算机启动以来的毫秒数
+       io_stall_read_ms,  --用户等待文件中发出读取所用的总时间
+       io_stall_write_ms, --用户等待在该文件中完成写入所用的总时间
+       io_stall,          --用户等待在文件中完成 I/O 操作所用的总时间
+                          --为io_stall_read_ms+io_stall_write_ms
+       
+       num_of_reads,         --在该文件中读取的次数
+       num_of_bytes_read,    --在该文件中读取的总字节数
+       
+       num_of_writes,        --在该文件中写入的次数
+       num_of_bytes_written  --在该文件中写入的总字节数
+       
+from sys.dm_io_virtual_file_stats(null,  --数据库id
+                                  null   --文件id
+                                 ) 
+order by io_stall desc
+
+>>>>>>> 03344ce6e91dd37b680f80469bac6a5a2eaf794e

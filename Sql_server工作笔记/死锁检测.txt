@@ -1,0 +1,207 @@
+--查询锁表与解锁
+
+select   request_session_id   spid,OBJECT_NAME(resource_associated_entity_id) tableName   
+from   sys.dm_tran_locks where resource_type='OBJECT'
+
+--解锁：
+declare @spid  int
+Set @spid  = 57 --锁表进程
+declare @sql varchar(1000)
+set @sql='kill '+cast(@spid  as varchar)
+exec(@sql)
+
+--死锁检测
+
+use master
+Select spid from sysprocesses where blocked<>0
+
+--查询死锁SQL语句一
+
+declare @spid int,@bl int,
+
+ @intTransactionCountOnEntry  int,
+
+        @intRowcount    int,
+
+        @intCountProperties   int,
+
+        @intCounter    int
+
+
+
+ create table #tmp_lock_who (
+
+ id int identity(1,1),
+
+ spid smallint,
+
+ bl smallint)
+
+ 
+
+ IF @@ERROR<>0 print @@ERROR
+
+ 
+
+ insert into #tmp_lock_who(spid,bl) select  0 ,blocked
+
+   from (select * from sysprocesses where  blocked>0 ) a 
+
+   where not exists(select * from (select * from sysprocesses where  blocked>0 ) b 
+
+   where a.blocked=spid)
+
+   union select spid,blocked from sysprocesses where  blocked>0
+
+
+
+ IF @@ERROR<>0 print @@ERROR 
+
+  
+
+-- 找到临时表的记录数
+ select  @intCountProperties = Count(*),@intCounter = 1
+
+ from #tmp_lock_who
+
+ 
+
+ IF @@ERROR<>0 print @@ERROR 
+
+ 
+
+ if @intCountProperties=0
+
+  select N'现在没有阻塞和死锁信息' as message
+
+
+
+-- 循环开始
+while @intCounter <= @intCountProperties
+
+begin
+
+-- 取第一条记录
+  select  @spid = spid,@bl = bl
+
+  from #tmp_lock_who where Id = @intCounter 
+
+ begin
+
+  if @spid =0 
+
+            select N'引起数据库死锁的是: '+ CAST(@bl AS VARCHAR(10)) + N'进程号,其执行的SQL语法如下'
+
+ else
+
+            select N'进程号SPID：'+ CAST(@spid AS VARCHAR(10))+ N'被进程号SPID：'+ CAST(@bl AS VARCHAR(10)) +N'阻塞,其当前进程执行的SQL语法如下'
+
+ DBCC INPUTBUFFER (@bl )
+
+ end 
+
+
+
+-- 循环指针下移
+ set @intCounter = @intCounter + 1
+
+end
+
+--查询死锁SQL语句二
+declare @spid int,@bl int,
+
+ @intTransactionCountOnEntry  int,
+
+        @intRowcount    int,
+
+        @intCountProperties   int,
+
+        @intCounter    int
+
+
+
+ create table #tmp_lock_who (
+
+ id int identity(1,1),
+
+ spid smallint,
+
+ bl smallint)
+
+ 
+
+ IF @@ERROR<>0 print @@ERROR
+
+ 
+
+ insert into #tmp_lock_who(spid,bl) select  0 ,blocked
+
+   from (select * from sysprocesses where  blocked>0 ) a 
+
+   where not exists(select * from (select * from sysprocesses where  blocked>0 ) b 
+
+   where a.blocked=spid)
+
+   union select spid,blocked from sysprocesses where  blocked>0
+
+
+
+ IF @@ERROR<>0 print @@ERROR 
+
+  
+
+-- 找到临时表的记录数
+ select  @intCountProperties = Count(*),@intCounter = 1
+
+ from #tmp_lock_who
+
+ 
+
+ IF @@ERROR<>0 print @@ERROR 
+
+ 
+
+ if @intCountProperties=0
+
+  select N'现在没有阻塞和死锁信息' as message
+
+
+
+-- 循环开始
+while @intCounter <= @intCountProperties
+
+begin
+
+-- 取第一条记录
+  select  @spid = spid,@bl = bl
+
+  from #tmp_lock_who where Id = @intCounter 
+
+ begin
+
+  if @spid =0 
+
+            select N'引起数据库死锁的是: '+ CAST(@bl AS VARCHAR(10)) + N'进程号,其执行的SQL语法如下'
+
+ else
+
+            select N'进程号SPID：'+ CAST(@spid AS VARCHAR(10))+ N'被进程号SPID：'+ CAST(@bl AS VARCHAR(10)) +N'阻塞,其当前进程执行的SQL语法如下'
+
+ DBCC INPUTBUFFER (@bl )
+
+ end 
+
+
+
+-- 循环指针下移
+ set @intCounter = @intCounter + 1
+
+end
+
+
+--查询阻塞源头
+select  t2.blocking_session_id,COUNT(0) counts
+from sys.dm_tran_locks as t1 with(nolock) , sys.dm_os_waiting_tasks as t2 with(nolock)    
+where t1.lock_owner_address = t2.resource_address
+group by blocking_session_id
+order by 2
