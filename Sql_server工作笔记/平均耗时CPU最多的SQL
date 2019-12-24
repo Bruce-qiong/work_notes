@@ -1,4 +1,4 @@
-```
+
 SELECT TOP 20
     total_worker_time/1000 AS [总消耗CPU 时间(ms)],execution_count [运行次数],
     qs.total_worker_time/qs.execution_count/1000 AS [平均消耗CPU 时间(ms)],
@@ -14,7 +14,7 @@ SELECT TOP 20
 FROM sys.dm_exec_query_stats qs WITH(nolock)
 CROSS apply sys.dm_exec_sql_text(qs.sql_handle) AS qt
 WHERE  execution_count>1
-```
+
 =======
 SELECT TOP 20
     total_worker_time/1000 AS [总消耗CPU 时间(ms)],execution_count [运行次数],
