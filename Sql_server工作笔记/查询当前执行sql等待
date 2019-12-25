@@ -1,0 +1,83 @@
+--查看当前数据库中正在执行的 SQL 在等待什么
+
+SELECT SUBSTRING(st.TEXT, (qs.statement_start_offset / 2) + 1, (
+            (
+                (
+                    CASE qs.statement_end_offset
+                        WHEN - 1
+                            THEN DATALENGTH(st.[text])
+                        ELSE qs.statement_end_offset
+                        END
+                    ) - qs.statement_start_offset
+                ) / 2
+            ) + 1) AS [sql]
+    ,DB_NAME(er.database_id) AS [db_name]
+    ,es.login_name
+    ,ec.client_net_address
+    ,er.command AS request_command
+    ,er.start_time AS request_start_time
+    ,wt.wait_duration_ms AS waiting_duration
+    ,wt.wait_type AS waiting_type
+    ,ot.task_state
+    ,ec.connection_id
+    ,ec.session_id
+    ,es.[status] AS session_status
+    ,CASE es.transaction_isolation_level
+        WHEN 0
+            THEN 'Unspecified'
+        WHEN 1
+            THEN 'Read Uncomitted'
+        WHEN 2
+            THEN 'Read Committed'
+        WHEN 3
+            THEN 'Repeatable'
+        WHEN 4
+            THEN 'Serializable'
+        WHEN 5
+            THEN 'Snapshot'
+        END AS transaction_isolation_level
+    ,er.request_id
+    ,er.[status] AS request_status
+    ,USER_NAME(er.[user_id]) AS [request_user]
+    ,er.wait_type AS request_blocked_type
+    ,er.wait_time AS request_blocked_time
+    ,ec.connect_time
+    ,es.login_time
+    ,er.cpu_time
+    ,os.cpu_id
+    ,os.scheduler_id
+    ,th.os_thread_id
+    ,er.task_address
+    ,ot.worker_address
+    ,th.thread_address
+    ,CASE 
+        WHEN er.[sql_handle] IS NULL
+            THEN ec.most_recent_sql_handle
+        ELSE er.[sql_handle]
+        END AS [sql_handle]
+FROM sys.dm_exec_connections AS ec
+INNER JOIN sys.dm_exec_sessions AS es ON es.session_id = ec.session_id
+LEFT OUTER JOIN sys.dm_exec_requests AS er ON er.connection_id = ec.connection_id
+INNER JOIN sys.dm_os_tasks ot ON er.task_address = ot.task_address
+    OR er.task_address = ot.parent_task_address
+LEFT OUTER JOIN sys.dm_os_workers AS ow ON ow.worker_address = ot.worker_address
+LEFT OUTER JOIN sys.dm_os_threads AS th ON th.thread_address = ow.thread_address
+LEFT OUTER JOIN sys.dm_os_schedulers AS os ON os.scheduler_id = ot.scheduler_id
+LEFT OUTER JOIN sys.dm_os_waiting_tasks AS wt ON wt.waiting_task_address = ot.task_address
+LEFT OUTER JOIN sys.dm_exec_query_stats AS qs ON qs.[sql_handle] = (
+        CASE 
+            WHEN er.[sql_handle] IS NULL
+                THEN ec.most_recent_sql_handle
+            ELSE er.[sql_handle]
+            END
+        )
+CROSS APPLY sys.dm_exec_sql_text(CASE 
+            WHEN er.[sql_handle] IS NULL
+                THEN ec.most_recent_sql_handle
+            ELSE er.[sql_handle]
+            END) AS st
+WHERE er.database_id = DB_ID()
+    AND er.request_id IS NOT NULL
+    AND wt.wait_duration_ms > 0
+    AND st.[text] NOT LIKE '%statement_start_offset%'
+ORDER BY wt.wait_duration_ms DESC;

@@ -1,0 +1,217 @@
+--数据库的CPU使用率
+
+WITH DB_CPU_Stats
+AS (
+    SELECT DatabaseID
+        ,DB_Name(DatabaseID) AS [Database Name]
+        ,SUM(total_worker_time) AS [CPU_Time_Ms]
+    FROM sys.dm_exec_query_stats AS qs
+    CROSS APPLY (
+        SELECT CONVERT(INT, value) AS [DatabaseID]
+        FROM sys.dm_exec_plan_attributes(qs.plan_handle)
+        WHERE attribute = N'dbid'
+        ) AS F_DB
+    GROUP BY DatabaseID
+    )
+SELECT ROW_NUMBER() OVER (
+        ORDER BY [CPU_Time_Ms] DESC
+        ) AS [CPU Rank]
+    ,[Database Name]
+    ,[CPU_Time_Ms] AS [CPU Time (ms)]
+    ,CAST([CPU_Time_Ms] * 1.0 / SUM([CPU_Time_Ms]) OVER () * 100.0 AS DECIMAL(5, 2)) AS [CPU Percent]
+FROM DB_CPU_Stats
+WHERE DatabaseID <> 32767 -- ResourceDB
+ORDER BY [CPU Rank]
+OPTION (RECOMPILE);
+
+---查询最近一段时间CPU利用率历史
+
+DECLARE @ts_now BIGINT = (
+        SELECT cpu_ticks / (cpu_ticks / ms_ticks)
+        FROM sys.dm_os_sys_info WITH (NOLOCK)
+        );
+
+SELECT TOP (256) SQLProcessUtilization AS [SQL Server Process CPU Utilization]
+    ,SystemIdle AS [System Idle Process]
+    ,100 - SystemIdle - SQLProcessUtilization AS [Other Process CPU Utilization]
+    ,DATEADD(ms, - 1 * (@ts_now - [timestamp]), GETDATE()) AS [Event Time]
+FROM (
+    SELECT record.value('(./Record/@id)[1]', 'int') AS record_id
+        ,record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') AS [SystemIdle]
+        ,record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int') AS [SQLProcessUtilization]
+        ,[timestamp]
+    FROM (
+        SELECT [timestamp]
+            ,CONVERT(XML, record) AS [record]
+        FROM sys.dm_os_ring_buffers WITH (NOLOCK)
+        WHERE ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+            AND record LIKE N'%<SystemHealth>%'
+        ) AS x
+    ) AS y
+ORDER BY record_id DESC
+OPTION (RECOMPILE);
+
+
+--占用cpu耗时最长
+
+SELECT TOP (50) DB_NAME(t.[dbid]) AS [Database Name]
+    ,t.[text] AS [Query Text]
+    ,qs.total_worker_time AS [Total Worker Time]
+    ,qs.min_worker_time AS [Min Worker Time]
+    ,qs.total_worker_time / qs.execution_count AS [Avg Worker Time]
+    ,qs.max_worker_time AS [Max Worker Time]
+    ,qs.execution_count AS [Execution Count]
+    ,qs.total_elapsed_time / qs.execution_count AS [Avg Elapsed Time]
+    ,qs.total_logical_reads / qs.execution_count AS [Avg Logical Reads]
+    ,qs.total_physical_reads / qs.execution_count AS [Avg Physical Reads]
+    ,qp.query_plan AS [Query Plan]
+    ,qs.creation_time AS [Creation Time]
+FROM sys.dm_exec_query_stats AS qs WITH (NOLOCK)
+CROSS APPLY sys.dm_exec_sql_text(plan_handle) AS t
+CROSS APPLY sys.dm_exec_query_plan(plan_handle) AS qp
+ORDER BY qs.total_worker_time DESC
+OPTION (RECOMPILE);
+
+--查看进程占用了内存
+
+SELECT physical_memory_in_use_kb / 1024 AS [SQL Server Memory Usage (MB)]
+    ,large_page_allocations_kb
+    ,locked_page_allocations_kb
+    ,page_fault_count
+    ,memory_utilization_percentage
+    ,available_commit_limit_kb
+    ,process_physical_memory_low
+    ,process_virtual_memory_low
+FROM sys.dm_os_process_memory WITH (NOLOCK)
+OPTION (RECOMPILE);
+
+--是否申请新的 Memory 无法得到
+
+SELECT @@SERVERNAME AS [Server Name]
+    ,[object_name]
+    ,cntr_value AS [Memory Grants Pending]
+FROM sys.dm_os_performance_counters WITH (NOLOCK)
+WHERE [object_name] LIKE N'%Memory Manager%' -- Handles named instances
+    AND counter_name = N'Memory Grants Pending'
+OPTION (RECOMPILE);
+--如果 Memory Grants Pending 的值一直大于 0，则明确的说明 Memory 存在压力
+
+--SQL Server 的最大最小 Memory 配置
+
+SELECT [name] AS [Name]
+    ,[configuration_id] AS [Number]
+    ,[minimum] AS [Minimum]
+    ,[maximum] AS [Maximum]
+    ,[is_dynamic] AS [Dynamic]
+    ,[is_advanced] AS [Advanced]
+    ,[value] AS [ConfigValue]
+    ,[value_in_use] AS [RunValue]
+    ,[description] AS [Description]
+FROM [master].[sys].[configurations]
+WHERE NAME IN (
+        'Min server memory (MB)'
+        ,'Max server memory (MB)'
+        );
+		
+SELECT *
+FROM sys.configurations
+WHERE configuration_id IN (
+        '1543'
+        ,'1544'
+        )
+		
+--通过 Signal Wait 判断是否 CPU 压力过大		
+SELECT CAST(100.0 * SUM(signal_wait_time_ms) / SUM(wait_time_ms) AS NUMERIC(20, 2)) AS [% Signal (CPU) Waits]
+    ,CAST(100.0 * SUM(wait_time_ms - signal_wait_time_ms) / SUM(wait_time_ms) AS NUMERIC(20, 2)) AS [% Resource Waits]
+FROM sys.dm_os_wait_stats WITH (NOLOCK)
+WHERE wait_type NOT IN (
+        N'BROKER_EVENTHANDLER'
+        ,N'BROKER_RECEIVE_WAITFOR'
+        ,N'BROKER_TASK_STOP'
+        ,N'BROKER_TO_FLUSH'
+        ,N'BROKER_TRANSMITTER'
+        ,N'CHECKPOINT_QUEUE'
+        ,N'CHKPT'
+        ,N'CLR_AUTO_EVENT'
+        ,N'CLR_MANUAL_EVENT'
+        ,N'CLR_SEMAPHORE'
+        ,N'DBMIRROR_DBM_EVENT'
+        ,N'DBMIRROR_EVENTS_QUEUE'
+        ,N'DBMIRROR_WORKER_QUEUE'
+        ,N'DBMIRRORING_CMD'
+        ,N'DIRTY_PAGE_POLL'
+        ,N'DISPATCHER_QUEUE_SEMAPHORE'
+        ,N'EXECSYNC'
+        ,N'FSAGENT'
+        ,N'FT_IFTS_SCHEDULER_IDLE_WAIT'
+        ,N'FT_IFTSHC_MUTEX'
+        ,N'HADR_CLUSAPI_CALL'
+        ,N'HADR_FILESTREAM_IOMGR_IOCOMPLETION'
+        ,N'HADR_LOGCAPTURE_WAIT'
+        ,N'HADR_NOTIFICATION_DEQUEUE'
+        ,N'HADR_TIMER_TASK'
+        ,N'HADR_WORK_QUEUE'
+        ,N'KSOURCE_WAKEUP'
+        ,N'LAZYWRITER_SLEEP'
+        ,N'LOGMGR_QUEUE'
+        ,N'ONDEMAND_TASK_QUEUE'
+        ,N'PWAIT_ALL_COMPONENTS_INITIALIZED'
+        ,N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP'
+        ,N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP'
+        ,N'REQUEST_FOR_DEADLOCK_SEARCH'
+        ,N'RESOURCE_QUEUE'
+        ,N'SERVER_IDLE_CHECK'
+        ,N'SLEEP_BPOOL_FLUSH'
+        ,N'SLEEP_DBSTARTUP'
+        ,N'SLEEP_DCOMSTARTUP'
+        ,N'SLEEP_MASTERDBREADY'
+        ,N'SLEEP_MASTERMDREADY'
+        ,N'SLEEP_MASTERUPGRADED'
+        ,N'SLEEP_MSDBSTARTUP'
+        ,N'SLEEP_SYSTEMTASK'
+        ,N'SLEEP_TASK'
+        ,N'SLEEP_TEMPDBSTARTUP'
+        ,N'SNI_HTTP_ACCEPT'
+        ,N'SP_SERVER_DIAGNOSTICS_SLEEP'
+        ,N'SQLTRACE_BUFFER_FLUSH'
+        ,N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP'
+        ,N'SQLTRACE_WAIT_ENTRIES'
+        ,N'WAIT_FOR_RESULTS'
+        ,N'WAITFOR'
+        ,N'WAITFOR_TASKSHUTDOWN'
+        ,N'WAIT_XTP_HOST_WAIT'
+        ,N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG'
+        ,N'WAIT_XTP_CKPT_CLOSE'
+        ,N'XE_DISPATCHER_JOIN'
+        ,N'XE_DISPATCHER_WAIT'
+        ,N'XE_TIMER_EVENT'
+        )
+OPTION (RECOMPILE);
+--通常，如果 Signal Waits 超过 10-15%，则说明 CPU 压力过大。
+
+--获取所有数据库的 Buffer 使用率
+
+WITH AggregateBufferPoolUsage
+AS (
+    SELECT DB_NAME(database_id) AS [Database Name]
+        ,CAST(COUNT(*) * 8 / 1024.0 AS DECIMAL(10, 2)) AS [CachedSize]
+    FROM sys.dm_os_buffer_descriptors WITH (NOLOCK)
+    WHERE database_id <> 32767 -- ResourceDB
+    GROUP BY DB_NAME(database_id)
+    )
+SELECT ROW_NUMBER() OVER (
+        ORDER BY CachedSize DESC
+        ) AS [Buffer Pool Rank]
+    ,[Database Name]
+    ,CachedSize AS [Cached Size (MB)]
+    ,CAST(CachedSize / SUM(CachedSize) OVER () * 100.0 AS DECIMAL(5, 2)) AS [Buffer Pool Percent]
+FROM AggregateBufferPoolUsage
+ORDER BY [Buffer Pool Rank]
+OPTION (RECOMPILE);
+
+--查看内存分配状况
+
+DBCC MEMORYSTATUS();
+
+参考链接
+https://www.cnblogs.com/gaochundong/p/everyone_is_a_dba_sqlserver_metadata.html

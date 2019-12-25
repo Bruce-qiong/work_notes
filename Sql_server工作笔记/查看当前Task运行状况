@@ -1,0 +1,12 @@
+SELECT AVG(current_tasks_count) AS [Avg Task Count]
+    ,AVG(runnable_tasks_count) AS [Avg Runnable Task Count]
+    ,AVG(pending_disk_io_count) AS [Avg Pending DiskIO Count]
+FROM sys.dm_os_schedulers WITH (NOLOCK)
+WHERE scheduler_id < 255
+OPTION (RECOMPILE);
+
+--上面的 SQL 需要运行多次来查看结果，如果某个值持续的大于 10 则说明可能有问题，需要进一步调查。
+
+--较高的 Avg Task Count 通常由 Blocking 或 Deadlocking 引起，或者其他资源竞争。
+--较高的 Avg Runnable Task Count 说明正在执行的任务很多，CPU 可能有压力。
+--较高的 Avg Pending DiskIO Count 说明等待的磁盘 IO 很多，Disk 可能有压力。

@@ -1,0 +1,106 @@
+--获取存储过程 SP 执行次数排名
+SELECT TOP (100) p.[name] AS [SP Name]
+    ,qs.execution_count
+    ,ISNULL(qs.execution_count / DATEDIFF(Minute, qs.cached_time, GETDATE()), 0) AS [Calls/Minute]
+    ,qs.total_worker_time / qs.execution_count AS [AvgWorkerTime]
+    ,qs.total_worker_time AS [TotalWorkerTime]
+    ,qs.total_elapsed_time
+    ,qs.total_elapsed_time / qs.execution_count AS [avg_elapsed_time]
+    ,qs.cached_time
+FROM sys.procedures AS p WITH (NOLOCK)
+INNER JOIN sys.dm_exec_procedure_stats AS qs WITH (NOLOCK) ON p.[object_id] = qs.[object_id]
+WHERE qs.database_id = DB_ID()
+ORDER BY qs.execution_count DESC
+OPTION (RECOMPILE);
+
+--查看哪个 SP 执行的平均时间最长
+SELECT TOP (25) p.[name] AS [SP Name]
+    ,qs.total_elapsed_time / qs.execution_count AS [avg_elapsed_time]
+    ,qs.total_elapsed_time
+    ,qs.execution_count
+    ,ISNULL(qs.execution_count / DATEDIFF(Minute, qs.cached_time, GETDATE()), 0) AS [Calls/Minute]
+    ,qs.total_worker_time / qs.execution_count AS [AvgWorkerTime]
+    ,qs.total_worker_time AS [TotalWorkerTime]
+    ,qs.cached_time
+FROM sys.procedures AS p WITH (NOLOCK)
+INNER JOIN sys.dm_exec_procedure_stats AS qs WITH (NOLOCK) ON p.[object_id] = qs.[object_id]
+WHERE qs.database_id = DB_ID()
+ORDER BY avg_elapsed_time DESC
+OPTION (RECOMPILE);
+
+--查看哪个 SP 执行的平均时间最不稳定
+SELECT TOP (25) p.[name] AS [SP Name]
+    ,qs.execution_count
+    ,qs.min_elapsed_time
+    ,qs.total_elapsed_time / qs.execution_count AS [avg_elapsed_time]
+    ,qs.max_elapsed_time
+    ,qs.last_elapsed_time
+    ,qs.cached_time
+FROM sys.procedures AS p WITH (NOLOCK)
+INNER JOIN sys.dm_exec_procedure_stats AS qs WITH (NOLOCK) ON p.[object_id] = qs.[object_id]
+WHERE qs.database_id = DB_ID()
+ORDER BY avg_elapsed_time DESC
+OPTION (RECOMPILE);
+
+--查看哪个 SP 耗费了最多的 CPU 时间
+SELECT TOP (25) p.[name] AS [SP Name]
+    ,qs.total_worker_time AS [TotalWorkerTime]
+    ,qs.total_worker_time / qs.execution_count AS [AvgWorkerTime]
+    ,qs.execution_count
+    ,ISNULL(qs.execution_count / DATEDIFF(Minute, qs.cached_time, GETDATE()), 0) AS [Calls/Minute]
+    ,qs.total_elapsed_time
+    ,qs.total_elapsed_time / qs.execution_count AS [avg_elapsed_time]
+    ,qs.cached_time
+FROM sys.procedures AS p WITH (NOLOCK)
+INNER JOIN sys.dm_exec_procedure_stats AS qs WITH (NOLOCK) ON p.[object_id] = qs.[object_id]
+WHERE qs.database_id = DB_ID()
+ORDER BY qs.total_worker_time DESC
+OPTION (RECOMPILE);
+
+--查看哪个 SP 执行的逻辑读最多
+SELECT TOP (25) p.[name] AS [SP Name]
+    ,qs.total_logical_reads AS [TotalLogicalReads]
+    ,qs.total_logical_reads / qs.execution_count AS [AvgLogicalReads]
+    ,qs.execution_count
+    ,ISNULL(qs.execution_count / DATEDIFF(Minute, qs.cached_time, GETDATE()), 0) AS [Calls/Minute]
+    ,qs.total_elapsed_time
+    ,qs.total_elapsed_time / qs.execution_count AS [avg_elapsed_time]
+    ,qs.cached_time
+FROM sys.procedures AS p WITH (NOLOCK)
+INNER JOIN sys.dm_exec_procedure_stats AS qs WITH (NOLOCK) ON p.[object_id] = qs.[object_id]
+WHERE qs.database_id = DB_ID()
+ORDER BY qs.total_logical_reads DESC
+OPTION (RECOMPILE);
+
+--查看哪个 SP 执行的物理读最多
+SELECT TOP (25) p.[name] AS [SP Name]
+    ,qs.total_physical_reads AS [TotalPhysicalReads]
+    ,qs.total_physical_reads / qs.execution_count AS [AvgPhysicalReads]
+    ,qs.execution_count
+    ,qs.total_logical_reads
+    ,qs.total_elapsed_time
+    ,qs.total_elapsed_time / qs.execution_count AS [avg_elapsed_time]
+    ,qs.cached_time
+FROM sys.procedures AS p WITH (NOLOCK)
+INNER JOIN sys.dm_exec_procedure_stats AS qs WITH (NOLOCK) ON p.[object_id] = qs.[object_id]
+WHERE qs.database_id = DB_ID()
+    AND qs.total_physical_reads > 0
+ORDER BY qs.total_physical_reads DESC
+    ,qs.total_logical_reads DESC
+OPTION (RECOMPILE);
+
+--查看哪个 SP 执行的逻辑写最多
+SELECT TOP (25) p.[name] AS [SP Name]
+    ,qs.total_logical_writes AS [TotalLogicalWrites]
+    ,qs.total_logical_writes / qs.execution_count AS [AvgLogicalWrites]
+    ,qs.execution_count
+    ,ISNULL(qs.execution_count / DATEDIFF(Minute, qs.cached_time, GETDATE()), 0) AS [Calls/Minute]
+    ,qs.total_elapsed_time
+    ,qs.total_elapsed_time / qs.execution_count AS [avg_elapsed_time]
+    ,qs.cached_time
+FROM sys.procedures AS p WITH (NOLOCK)
+INNER JOIN sys.dm_exec_procedure_stats AS qs WITH (NOLOCK) ON p.[object_id] = qs.[object_id]
+WHERE qs.database_id = DB_ID()
+    AND qs.total_logical_writes > 0
+ORDER BY qs.total_logical_writes DESC
+OPTION (RECOMPILE);

@@ -1,0 +1,477 @@
+--查找需要改进的索引
+SELECT CONVERT(DECIMAL(18, 2), user_seeks * avg_total_user_cost * (avg_user_impact * 0.01)) AS [index_advantage]
+    ,migs.last_user_seek
+    ,mid.[statement] AS [Database.Schema.Table]
+    ,mid.equality_columns
+    ,mid.inequality_columns
+    ,mid.included_columns
+    ,migs.unique_compiles
+    ,migs.user_seeks
+    ,migs.avg_total_user_cost
+    ,migs.avg_user_impact
+FROM sys.dm_db_missing_index_group_stats AS migs WITH (NOLOCK)
+INNER JOIN sys.dm_db_missing_index_groups AS mig WITH (NOLOCK) ON migs.group_handle = mig.index_group_handle
+INNER JOIN sys.dm_db_missing_index_details AS mid WITH (NOLOCK) ON mig.index_handle = mid.index_handle
+ORDER BY index_advantage DESC
+OPTION (RECOMPILE);
+
+--这里查询出的数据，只是说明数据寻址时间有点儿长，不一定就是缺少索引所引起的。
+
+
+--指定数据库需要优化的index
+use database_name; --指定需要优化的数据库
+SELECT DISTINCT CONVERT(DECIMAL(18, 2), user_seeks * avg_total_user_cost * (avg_user_impact * 0.01)) AS [index_advantage]
+    ,migs.last_user_seek
+    ,mid.[statement] AS [Database.Schema.Table]
+    ,mid.equality_columns
+    ,mid.inequality_columns
+    ,mid.included_columns
+    ,migs.unique_compiles
+    ,migs.user_seeks
+    ,migs.avg_total_user_cost
+    ,migs.avg_user_impact
+    ,OBJECT_NAME(mid.[object_id]) AS [Table Name]
+    ,p.rows AS [Table Rows]
+FROM sys.dm_db_missing_index_group_stats AS migs WITH (NOLOCK)
+INNER JOIN sys.dm_db_missing_index_groups AS mig WITH (NOLOCK) ON migs.group_handle = mig.index_group_handle
+INNER JOIN sys.dm_db_missing_index_details AS mid WITH (NOLOCK) ON mig.index_handle = mid.index_handle
+INNER JOIN sys.partitions AS p WITH (NOLOCK) ON p.[object_id] = mid.[object_id]
+WHERE mid.database_id = DB_ID()
+ORDER BY index_advantage DESC
+OPTION (RECOMPILE);
+
+
+--查找index 写操作沅多于读的表
+-- 由于对索引写操作员多于读操作，对index的帮助不大，需要根据业务需求来判断是否能够Drop掉该索引
+
+use database_name; --指定需要优化的数据库
+SELECT OBJECT_NAME(s.[object_id]) AS [Table Name]
+    ,i.[name] AS [Index Name]
+    ,i.index_id
+    ,i.is_disabled
+    ,i.is_hypothetical
+    ,i.has_filter
+    ,i.fill_factor
+    ,user_updates AS [Total Writes]
+    ,user_seeks + user_scans + user_lookups AS [Total Reads]
+    ,user_updates - (user_seeks + user_scans + user_lookups) AS [Difference]
+FROM sys.dm_db_index_usage_stats AS s WITH (NOLOCK)
+INNER JOIN sys.indexes AS i WITH (NOLOCK) ON s.[object_id] = i.[object_id]
+    AND i.index_id = s.index_id
+WHERE OBJECTPROPERTY(s.[object_id], 'IsUserTable') = 1
+    AND s.database_id = DB_ID()
+    AND user_updates > (user_seeks + user_scans + user_lookups)
+    AND i.index_id > 1
+ORDER BY [Difference] DESC
+    ,[Total Writes] DESC
+    ,[Total Reads] ASC
+OPTION (RECOMPILE);
+
+--查看 Index 的 Statistics 最后修改时间
+
+use database_name; --指定需要优化的数据库
+SELECT SCHEMA_NAME(o.[schema_id]) + N'.' + o.[name] AS [Object Name]
+    ,o.type_desc AS [Object Type]
+    ,i.[name] AS [Index Name]
+    ,STATS_DATE(i.[object_id], i.index_id) AS [Statistics Date]
+    ,s.auto_created
+    ,s.no_recompute
+    ,s.user_created
+    ,st.row_count
+    ,st.used_page_count
+FROM sys.objects AS o WITH (NOLOCK)
+INNER JOIN sys.indexes AS i WITH (NOLOCK) ON o.[object_id] = i.[object_id]
+INNER JOIN sys.stats AS s WITH (NOLOCK) ON i.[object_id] = s.[object_id]
+    AND i.index_id = s.stats_id
+INNER JOIN sys.dm_db_partition_stats AS st WITH (NOLOCK) ON o.[object_id] = st.[object_id]
+    AND i.[index_id] = st.[index_id]
+WHERE o.[type] IN (
+        'U'
+        ,'V'
+        )
+    AND st.row_count > 0
+ORDER BY STATS_DATE(i.[object_id], i.index_id) DESC
+OPTION (RECOMPILE);
+
+--查看哪些 Index 被修改的最频繁
+
+use database_name; --指定需要优化的数据库
+SELECT TableName = OBJECT_NAME(s.[object_id])
+    ,SchemaName = SCHEMA_NAME(o.[schema_id])
+    ,IndexName = i.[name]
+    ,user_updates
+    ,i.is_primary_key
+FROM sys.dm_db_index_usage_stats s
+JOIN sys.objects O ON s.[object_id] = O.[object_id]
+JOIN sys.indexes i ON s.[object_id] = i.[object_id]
+    AND s.index_id = i.index_id
+WHERE OBJECTPROPERTY(s.[object_id], 'IsMsShipped') = 0
+    AND user_seeks = 0
+    AND user_scans = 0
+    AND user_lookups = 0
+    AND i.NAME IS NOT NULL -- Ignore HEAP indexes.
+ORDER BY user_updates DESC
+
+--查看index碎片化指数
+
+use database_name; --指定需要优化的数据库
+SELECT DB_NAME(ps.database_id) AS [Database Name]
+    ,OBJECT_NAME(ps.[object_id]) AS [Object Name]
+    ,i.[name] AS [Index Name]
+    ,ps.index_id
+    ,ps.index_type_desc
+    ,ps.avg_fragmentation_in_percent
+    ,ps.fragment_count
+    ,ps.page_count
+    ,i.fill_factor
+    ,i.has_filter
+    ,i.filter_definition
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, N'LIMITED') AS ps
+INNER JOIN sys.indexes AS i WITH (NOLOCK) ON ps.[object_id] = i.[object_id]
+    AND ps.index_id = i.index_id
+WHERE ps.database_id = DB_ID()
+    AND ps.page_count > 2500
+ORDER BY ps.avg_fragmentation_in_percent DESC
+OPTION (RECOMPILE);
+
+-- 查看index 上的读操作最活跃
+
+use database_name; --指定需要优化的数据库
+SELECT OBJECT_NAME(s.[object_id]) AS [ObjectName]
+    ,i.[name] AS [IndexName]
+    ,i.index_id
+    ,user_seeks + user_scans + user_lookups AS [Reads]
+    ,s.user_updates AS [Writes]
+    ,i.type_desc AS [IndexType]
+    ,i.fill_factor AS [FillFactor]
+    ,i.has_filter
+    ,i.filter_definition
+    ,s.last_user_scan
+    ,s.last_user_lookup
+    ,s.last_user_seek
+FROM sys.dm_db_index_usage_stats AS s WITH (NOLOCK)
+INNER JOIN sys.indexes AS i WITH (NOLOCK) ON s.[object_id] = i.[object_id]
+WHERE OBJECTPROPERTY(s.[object_id], 'IsUserTable') = 1
+    AND i.index_id = s.index_id
+    AND s.database_id = DB_ID()
+ORDER BY user_seeks + user_scans + user_lookups DESC
+OPTION (RECOMPILE);
+
+-- 查看index上的写操作最活跃
+use database_name; --指定需要优化的数据库
+SELECT OBJECT_NAME(s.[object_id]) AS [ObjectName]
+    ,i.[name] AS [IndexName]
+    ,i.index_id
+    ,s.user_updates AS [Writes]
+    ,user_seeks + user_scans + user_lookups AS [Reads]
+    ,i.type_desc AS [IndexType]
+    ,i.fill_factor AS [FillFactor]
+    ,i.has_filter
+    ,i.filter_definition
+    ,s.last_system_update
+    ,s.last_user_update
+FROM sys.dm_db_index_usage_stats AS s WITH (NOLOCK)
+INNER JOIN sys.indexes AS i WITH (NOLOCK) ON s.[object_id] = i.[object_id]
+WHERE OBJECTPROPERTY(s.[object_id], 'IsUserTable') = 1
+    AND i.index_id = s.index_id
+    AND s.database_id = DB_ID()
+ORDER BY s.user_updates DESC
+OPTION (RECOMPILE);
+
+--查看 Index 所使用的 Buffer 数量
+
+SELECT TOP 25 obj.[name] AS TableName
+    ,i.[name] AS IndexName
+    ,i.[type_desc] AS IndexType
+    ,count(*) AS Buffered_Page_Count
+    ,count(*) * 8192 / (1024 * 1024) AS Buffer_MB
+    ,obj.index_id
+FROM sys.dm_os_buffer_descriptors AS bd
+INNER JOIN (
+    SELECT object_name(object_id) AS NAME
+        ,index_id
+        ,allocation_unit_id
+        ,object_id
+    FROM sys.allocation_units AS au
+    INNER JOIN sys.partitions AS p ON au.container_id = p.hobt_id
+        AND (
+            au.type = 1
+            OR au.type = 3
+            )
+    
+    UNION ALL
+    
+    SELECT object_name(object_id) AS NAME
+        ,index_id
+        ,allocation_unit_id
+        ,object_id
+    FROM sys.allocation_units AS au
+    INNER JOIN sys.partitions AS p ON au.container_id = p.hobt_id
+        AND au.type = 2
+    ) AS obj ON bd.allocation_unit_id = obj.allocation_unit_id
+LEFT JOIN sys.indexes i ON i.object_id = obj.object_id
+    AND i.index_id = obj.index_id
+WHERE database_id = db_id()
+GROUP BY obj.NAME
+    ,obj.index_id
+    ,i.[name]
+    ,i.[type_desc]
+ORDER BY Buffered_Page_Count DESC
+
+--按照 IO Latch 等待请求对索引进行排行
+
+SELECT OBJECT_SCHEMA_NAME(ios.object_id) + '.' + OBJECT_NAME(ios.object_id) AS table_name
+    ,i.[name] AS index_name
+    ,page_io_latch_wait_count
+    ,page_io_latch_wait_in_ms
+    ,CAST(1. * page_io_latch_wait_in_ms / NULLIF(page_io_latch_wait_count, 0) AS DECIMAL(12, 2)) AS page_io_avg_lock_wait_ms
+    ,page_latch_wait_count
+    ,page_latch_wait_in_ms
+    ,CAST(1. * page_latch_wait_in_ms / NULLIF(page_latch_wait_count, 0) AS DECIMAL(12, 2)) AS page_avg_lock_wait_ms
+FROM sys.dm_db_index_operational_stats(DB_ID(), NULL, NULL, NULL) ios
+INNER JOIN sys.indexes i ON i.object_id = ios.object_id
+    AND i.index_id = ios.index_id
+WHERE OBJECTPROPERTY(ios.object_id, 'IsUserTable') = 1
+ORDER BY 3 DESC
+
+--获取select 语句的执行次数排名
+--<SQL server 2012>
+SELECT TOP (100) qs.execution_count
+    ,qs.total_rows
+    ,qs.last_rows
+    ,qs.min_rows
+    ,qs.max_rows
+    ,qs.last_elapsed_time
+    ,qs.min_elapsed_time
+    ,qs.max_elapsed_time
+    ,total_worker_time
+    ,total_logical_reads
+    ,SUBSTRING(qt.[text], qs.statement_start_offset / 2 + 1, (
+            CASE 
+                WHEN qs.statement_end_offset = - 1
+                    THEN LEN(CONVERT(NVARCHAR(MAX), qt.[text])) * 2
+                ELSE qs.statement_end_offset
+                END - qs.statement_start_offset
+            ) / 2) AS query_text
+FROM sys.dm_exec_query_stats AS qs WITH (NOLOCK)
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS qt
+ORDER BY qs.execution_count DESC
+OPTION (RECOMPILE);
+
+<SQL server2008r2>
+SELECT TOP (100) qs.execution_count
+    ,qs.last_elapsed_time
+    ,qs.min_elapsed_time
+    ,qs.max_elapsed_time
+    ,total_worker_time
+    ,total_logical_reads
+    ,SUBSTRING(qt.[text], qs.statement_start_offset / 2 + 1, (
+            CASE 
+                WHEN qs.statement_end_offset = - 1
+                    THEN LEN(CONVERT(NVARCHAR(MAX), qt.[text])) * 2
+                ELSE qs.statement_end_offset
+                END - qs.statement_start_offset
+            ) / 2) AS query_text
+FROM sys.dm_exec_query_stats AS qs WITH (NOLOCK)
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS qt
+ORDER BY qs.execution_count DESC
+OPTION (RECOMPILE);
+
+--查看应席查询耗费资源（Ad Hoc）
+
+SELECT TOP (50) [text] AS [QueryText]
+    ,cp.cacheobjtype
+    ,cp.objtype
+    ,cp.size_in_bytes / 1024 AS [Plan Size in KB]
+FROM sys.dm_exec_cached_plans AS cp WITH (NOLOCK)
+CROSS APPLY sys.dm_exec_sql_text(plan_handle)
+WHERE cp.cacheobjtype = N'Compiled Plan'
+    AND cp.objtype IN (
+        N'Adhoc'
+        ,N'Prepared'
+        )
+    AND cp.usecounts = 1
+ORDER BY cp.size_in_bytes DESC
+OPTION (RECOMPILE);
+
+--查询当前处于等待的状态的 Task
+
+SELECT dm_ws.wait_duration_ms
+    ,dm_ws.wait_type
+    ,dm_es.STATUS
+    ,dm_t.TEXT
+    ,dm_qp.query_plan
+    ,dm_ws.session_ID
+    ,dm_es.cpu_time
+    ,dm_es.memory_usage
+    ,dm_es.logical_reads
+    ,dm_es.total_elapsed_time
+    ,dm_es.program_name
+    ,DB_NAME(dm_r.database_id) DatabaseName
+    ,dm_ws.blocking_session_id
+    ,dm_r.wait_resource
+    ,dm_es.login_name
+    ,dm_r.command
+    ,dm_r.last_wait_type
+FROM sys.dm_os_waiting_tasks dm_ws
+INNER JOIN sys.dm_exec_requests dm_r ON dm_ws.session_id = dm_r.session_id
+INNER JOIN sys.dm_exec_sessions dm_es ON dm_es.session_id = dm_r.session_id
+CROSS APPLY sys.dm_exec_sql_text(dm_r.sql_handle) dm_t
+CROSS APPLY sys.dm_exec_query_plan(dm_r.plan_handle) dm_qp
+WHERE dm_es.is_user_process = 1;
+
+--查询谁占用这session 连接
+CREATE TABLE #sp_who2 (
+    SPID INT
+    ,STATUS VARCHAR(255)
+    ,LOGIN VARCHAR(255)
+    ,HostName VARCHAR(255)
+    ,BlkBy VARCHAR(255)
+    ,DBName VARCHAR(255)
+    ,Command VARCHAR(255)
+    ,CPUTime INT
+    ,DiskIO INT
+    ,LastBatch VARCHAR(255)
+    ,ProgramName VARCHAR(255)
+    ,SPID2 INT
+    ,REQUESTID INT
+    )
+
+INSERT INTO #sp_who2
+EXEC sp_who2
+
+SELECT *
+FROM #sp_who2 w
+--WHERE w.ProgramName = 'xxx'
+
+DROP TABLE #sp_who2
+
+--查询程序占用的SPID信息
+SELECT spid
+    ,a.[status]
+    ,hostname
+    ,program_name
+    ,cmd
+    ,cpu
+    ,physical_io
+    ,blocked
+    ,b.[name]
+    ,loginame
+FROM master.dbo.sysprocesses a
+INNER JOIN master.dbo.sysdatabases b ON a.dbid = b.dbid
+where hostname != ''
+ORDER BY program_name
+
+--查询所有执行 SQL 对应的 sql_handle
+
+SELECT SUBSTRING(st.TEXT, (qs.statement_start_offset / 2) + 1, (
+            (
+                (
+                    CASE statement_end_offset
+                        WHEN - 1
+                            THEN DATALENGTH(st.TEXT)
+                        ELSE qs.statement_end_offset
+                        END
+                    ) - qs.statement_start_offset
+                ) / 2
+            ) + 1) AS statement_text
+    ,last_execution_time
+    ,total_elapsed_time / execution_count avg_elapsed_time
+    ,total_physical_reads
+    ,total_logical_reads
+    ,total_logical_writes
+    ,execution_count
+    ,total_worker_time
+    ,total_elapsed_time
+    ,creation_time
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+WHERE last_execution_time > DATEADD(SECOND, - 60, GETDATE())
+    AND st.TEXT NOT LIKE '%statement_start_offset%'
+    AND total_elapsed_time / execution_count >= 300
+ORDER BY last_execution_time DESC;
+
+--查询最近60秒，执行时间超过300毫秒的select 语句
+
+SELECT SUBSTRING(st.TEXT, (qs.statement_start_offset / 2) + 1, (
+            (
+                (
+                    CASE statement_end_offset
+                        WHEN - 1
+                            THEN DATALENGTH(st.TEXT)
+                        ELSE qs.statement_end_offset
+                        END
+                    ) - qs.statement_start_offset
+                ) / 2
+            ) + 1) AS statement_text
+    ,last_execution_time
+    ,total_elapsed_time / execution_count avg_elapsed_time
+    ,total_physical_reads
+    ,total_logical_reads
+    ,total_logical_writes
+    ,execution_count
+    ,total_worker_time
+    ,total_elapsed_time
+    ,creation_time
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+WHERE last_execution_time > DATEADD(SECOND, - 60, GETDATE())
+    AND st.TEXT NOT LIKE '%statement_start_offset%'
+    AND total_elapsed_time / execution_count >= 300
+ORDER BY last_execution_time DESC;
+
+--查询最近60秒累计总执行次数大于1000次的sql语句
+SELECT SUBSTRING(st.TEXT, (qs.statement_start_offset / 2) + 1, (
+            (
+                (
+                    CASE statement_end_offset
+                        WHEN - 1
+                            THEN DATALENGTH(st.TEXT)
+                        ELSE qs.statement_end_offset
+                        END
+                    ) - qs.statement_start_offset
+                ) / 2
+            ) + 1) AS statement_text
+    ,last_execution_time
+    ,total_elapsed_time / execution_count avg_elapsed_time
+    ,total_physical_reads
+    ,total_logical_reads
+    ,total_logical_writes
+    ,execution_count
+    ,total_worker_time
+    ,total_elapsed_time
+    ,creation_time
+FROM sys.dm_exec_query_stats AS qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+WHERE last_execution_time > DATEADD(SECOND, - 60, GETDATE())
+    AND st.TEXT NOT LIKE '%statement_start_offset%'
+    AND execution_count < 100
+    AND total_elapsed_time / execution_count > 100
+    AND SUBSTRING(st.TEXT, (qs.statement_start_offset / 2) + 1, (
+            (
+                (
+                    CASE statement_end_offset
+                        WHEN - 1
+                            THEN DATALENGTH(st.TEXT)
+                        ELSE qs.statement_end_offset
+                        END
+                    ) - qs.statement_start_offset
+                ) / 2
+            ) + 1) NOT LIKE 'SELECT%'
+ORDER BY last_execution_time DESC;
+
+--查询前10个性能最差的sql语句
+
+SELECT TOP 10 TEXT AS 'SQL Statement'
+    ,last_execution_time AS 'Last Execution Time'
+    ,(total_logical_reads + total_physical_reads + total_logical_writes) / execution_count AS [Average IO]
+    ,(total_worker_time / execution_count) / 1000000.0 AS [Average CPU Time (sec)]
+    ,(total_elapsed_time / execution_count) / 1000000.0 AS [Average Elapsed Time (sec)]
+    ,execution_count AS "Execution Count"
+    ,qp.query_plan AS "Query Plan"
+FROM sys.dm_exec_query_stats qs
+CROSS APPLY sys.dm_exec_sql_text(qs.plan_handle) st
+CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) qp
+ORDER BY total_elapsed_time / execution_count DESC
+
+--

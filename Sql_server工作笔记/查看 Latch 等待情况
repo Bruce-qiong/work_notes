@@ -1,0 +1,47 @@
+--查看 Latch 等待情况<锁存器状态>
+SELECT *
+FROM sys.dm_os_latch_stats
+WHERE wait_time_ms > 10
+ORDER BY 2 DESC;
+
+SELECT *
+FROM sys.dm_os_wait_stats
+WHERE waiting_tasks_count > 20
+    AND wait_type LIKE '%LATCH%'
+ORDER BY 3 DESC;
+
+SELECT *
+FROM sys.dm_os_spinlock_stats
+ORDER BY [spins] DESC;
+
+WITH [Latches]
+AS (
+    SELECT [latch_class]
+        ,[wait_time_ms] / 1000.0 AS [WaitS]
+        ,[waiting_requests_count] AS [WaitCount]
+        ,100.0 * [wait_time_ms] / SUM([wait_time_ms]) OVER () AS [Percentage]
+        ,ROW_NUMBER() OVER (
+            ORDER BY [wait_time_ms] DESC
+            ) AS [RowNum]
+    FROM sys.dm_os_latch_stats
+    WHERE [latch_class] NOT IN (N'BUFFER')
+        --AND [wait_time_ms] > 0
+    )
+SELECT MAX([W1].[latch_class]) AS [LatchClass]
+    ,CAST(MAX([W1].[WaitS]) AS DECIMAL(14, 2)) AS [Wait_S]
+    ,MAX([W1].[WaitCount]) AS [WaitCount]
+    ,CAST(MAX([W1].[Percentage]) AS DECIMAL(14, 2)) AS [Percentage]
+    ,CAST((MAX([W1].[WaitS]) / MAX([W1].[WaitCount])) AS DECIMAL(14, 4)) AS [AvgWait_S]
+FROM [Latches] AS [W1]
+INNER JOIN [Latches] AS [W2] ON [W2].[RowNum] <= [W1].[RowNum]
+GROUP BY [W1].[RowNum]
+HAVING SUM([W2].[Percentage]) - MAX([W1].[Percentage]) < 95;-- percentage threshold
+
+--latch_class  闩锁类的名称 《shuan》
+--waiting_requests_count  此类中的闩锁等待的个数。 此计数器在闩锁等待启动时递增。
+--wait_time_ms   此类中闩锁的总计等待时间（毫秒）。
+--max_wait_time_ms 内存对象已等待此闩锁的最大时间。 如果此值异常高，则可能指示有内部死锁。
+--pdw_node_id 适用于： Azure Synapse Analytics (SQL DW)、并行数据仓库
+
+--官方参考页
+https://docs.microsoft.com/zh-cn/sql/relational-databases/system-dynamic-management-views/sys-dm-os-latch-stats-transact-sql?view=sql-server-ver15
