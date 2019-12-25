@@ -1,0 +1,83 @@
+--查看数据库编码
+show variables like 'character%';
+
+--character_set_client      为客户端编码方式；
+--character_set_connection  为建立连接使用的编码；
+--character_set_database    为数据库的编码；
+--character_set_results     为结果集的编码；
+--character_set_server      为数据库服务器的编码；
+
+--查询数据文件存放路径
+
+show variables like '%datadir%';
++---------------+-----------------+
+| Variable_name | Value           |
++---------------+-----------------+
+| datadir       | /var/lib/mysql/ |
++---------------+-----------------+
+
+--查看每个数据库所占磁盘大小
+
+SELECT
+  TABLE_SCHEMA AS "DBname",
+  TRUNCATE(SUM(`DATA_LENGTH`) / 1024 / 1024, 2) AS "表所占空间（MB）",
+  TRUNCATE(SUM(`INDEX_LENGTH`) / 1024 / 1024, 2) AS "索引所占空间（MB）",
+  TRUNCATE((SUM(`DATA_LENGTH`) + SUM(`INDEX_LENGTH`)) / 1024 / 1024,2) AS "空间累计（MB）"
+FROM
+  information_schema.`TABLES`
+GROUP BY `TABLE_SCHEMA`;
+
+--查看日志配置文件
+
+show VARIABLES like "%slow%";
+
+--查看慢查询时间
+
+show variables like "long_query_time";
+
+--查询最大连接数
+show variables like 'max_connections'; 
+
+--查询已使用的连接数
+show global status like 'Max_used_connections';
+
+--进程使用情况
+show global status like 'Thread%'; 
+
+--查询缓存
+show global status like 'qcache%';
+--名词解释 
+--Qcache_free_blocks：缓存中相邻内存块的个数。数目大说明可能有碎片。FLUSH QUERY CACHE会对缓存中的碎片进行整理，从而得到一个空闲块。
+--Qcache_free_memory：缓存中的空闲内存。 
+--Qcache_hits：每次查询在缓存中命中时就增大
+--Qcache_inserts：每次插入一个查询时就增大。命中次数除以插入次数就是不中比率。
+--Qcache_lowmem_prunes：缓存出现内存不足并且必须要进行清理以便为更多查询提供空间的次数。这个数字最好长时间来看;如果这个数字在不断增长，就表示可能碎片非常严重，或者内存很少。(上面的 free_blocks和free_memory可以告诉您属于哪种情况) 
+--Qcache_not_cached：不适合进行缓存的查询的数量，通常是由于这些查询不是 SELECT 语句或者用了now()之类的函数。
+--Qcache_queries_in_cache：当前缓存的查询(和响应)的数量。
+--Qcache_total_blocks：缓存中块的数量。
+
+
+--查看排序使用情况
+show global status like 'sort%'; 
+--文件打开数
+show global status like 'open_files'; 
+--查看表锁情况
+show global status like 'table_locks%'; 
+--Table_locks_immediate表示立即释放表锁数
+--Table_locks_waited表示需要等待的表锁数
+
+--查看表用户使用情况
+select * from 表名\G
+
+                 user: root
+            statements: 3331        //用户执行的SQL语句总数量
+     statement_latency: 2.86 s        //该用户执行SQL总的等待时间，即累计的SQL执行时间
+ statement_avg_latency: 857.30 us    //单次SQL的平均执行时间
+           table_scans: 67    //全表扫描次数
+              file_ios: 23626    //io次数
+       file_io_latency: 1.72 s    //io消耗的总时间
+   current_connections: 1    //该用户的当前连接会话数
+     total_connections: 9    //该用户连接会话总数
+          unique_hosts: 1    //用户发起的连接中唯一主机的数量，即从几个主机发起过数据库连接
+        current_memory: 0 bytes    //当前被分配的内存
+total_memory_allocated: 0 bytes    //总共被分配的内存
