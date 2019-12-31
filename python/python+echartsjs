@@ -1,0 +1,46 @@
+#python 安装初始化echartsjs环境
+
+#离线安装插件，下载插件
+
+https://pypi.org/project/pyecharts/#files
+
+#cd /存放目录
+pip install pyecharts-0.1.9.4-py2.py3-none-any.whl
+
+#然后安装第三方依赖模块
+pip install pyecharts_snapshot
+
+#pyecharts包含的图表
+	Bar（柱状图/条形图） 
+　　Bar3D（3D 柱状图） 
+　　Boxplot（箱形图） 
+　　EffectScatter（带有涟漪特效动画的散点图） 
+　　Funnel（漏斗图） 
+　　Gauge（仪表盘） 
+　　Geo（地理坐标系） 
+　　Graph（关系图） 
+　　HeatMap（热力图） 
+　　Kline（K线图） 
+　　Line（折线/面积图） 
+　　Line3D（3D 折线图） 
+　　Liquid（水球图） 
+　　Map（地图） 
+　　Parallel（平行坐标系） 
+　　Pie（饼图） 
+　　Polar（极坐标系） 
+　　Radar（雷达图） 
+　　Sankey（桑基图） 
+　　Scatter（散点图） 
+　　Scatter3D（3D 散点图） 
+　　ThemeRiver（主题河流图） 
+　　WordCloud（词云图）
+
+python 调用实例:
+
+from pyecharts import Bar
+import pymysql
+
+bar =Bar("我的第一个图表", "这里是副标题")
+bar.add("服装", ["衬衫", "羊毛衫", "雪纺衫", "裤子", "高跟鞋", "袜子"], [5, 20, 36, 10, 75, 90])
+bar.show_config()
+bar.render()
