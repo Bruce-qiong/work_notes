@@ -13,3 +13,6 @@ for /F "tokens=2 delims= " %%i IN ('netstat -anp tcp^|find /i "LISTENING"') DO f
 echo                 {"{#TCP_PORT}":"8766"}
 echo         ]
 echo }
+
+https://www.zabbix.com/documentation/2.4/manual/config/items/userparameters
+https://blog.51cto.com/ywzhou/1579936
