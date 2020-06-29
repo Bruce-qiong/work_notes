@@ -1,0 +1,14 @@
+查看4101端口
+
+lsof -i:4101
+COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+node    77269 root   49u  IPv4 221710      0t0  TCP localhost:52764->localhost:brlp-0 (ESTABLISHED)
+
+观察到FD=49,  进程号是77269, 可以看到tcp连接创建时间是
+ ls -l /proc/77269/fd/49 
+lrwx------. 1 root root 64 Jun 29 15:04 /proc/77269/fd/49 -> socket:[221710]
+
+
+查看端口连接数
+                    指定端口
+ss -nat |grep -iw "4101"|wc -l
